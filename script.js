@@ -10,6 +10,10 @@ const SECRET_CODE = "26022002";
 let isCodeEntered = false;
 let currentSong = 0;
 let isPlaying = false;
+// Prevent creating duplicate intervals for floating hearts
+let heartsIntervalId = null;
+// Track touch start target to avoid swipes from controls
+let touchStartTarget = null;
 
 // Music playlist data
 const playlist = [
@@ -185,6 +189,7 @@ function switchSection(sectionId) {
 
 function createFloatingHearts() {
   const container = document.getElementById("hearts-container");
+  if (!container) return;
   const loveEmojis = [
     "❤️",
     "💕",
@@ -224,8 +229,9 @@ function createFloatingHearts() {
     setTimeout(() => heart.remove(), (duration + delay) * 1000);
   }
 
-  // Create hearts constantly for magical effect
-  setInterval(createHeart, 400); // Create more frequently for fuller effect
+  // Prevent creating multiple intervals if called repeatedly
+  if (heartsIntervalId) return;
+  heartsIntervalId = setInterval(createHeart, 400); // Create more frequently for fuller effect
 }
 
 // ============================================
@@ -552,12 +558,36 @@ function debounce(func, wait) {
 
 // Keyboard navigation
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    closeBirthdayPopup();
+  // Don't interfere while typing or when editable elements are focused
+  const activeEl = document.activeElement;
+  if (
+    activeEl &&
+    (activeEl.tagName === "INPUT" ||
+      activeEl.tagName === "TEXTAREA" ||
+      activeEl.isContentEditable)
+  ) {
+    return;
   }
 
-  // Arrow key navigation for nav buttons
+  if (e.key === "Escape") {
+    closeBirthdayPopup();
+    return;
+  }
+
+  // Arrow key navigation for nav buttons — only when main screen visible and no modal open
   if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+    const mainScreen = document.getElementById("main-screen");
+    const popup = document.getElementById("birthday-popup");
+    const lightbox = document.getElementById("lightbox-modal");
+    if (
+      !mainScreen ||
+      !mainScreen.classList.contains("active") ||
+      (popup && popup.classList.contains("show")) ||
+      (lightbox && lightbox.classList.contains("show"))
+    ) {
+      return;
+    }
+
     const activeBtn = document.querySelector(".nav-btn.active");
     if (activeBtn) {
       const allBtns = Array.from(document.querySelectorAll(".nav-btn"));
@@ -755,6 +785,8 @@ document.addEventListener(
   "touchstart",
   (e) => {
     touchStartX = e.changedTouches[0].screenX;
+    // store the original target to avoid swipes originating from controls
+    touchStartTarget = e.target;
   },
   false,
 );
@@ -764,6 +796,8 @@ document.addEventListener(
   (e) => {
     touchEndX = e.changedTouches[0].screenX;
     handleSwipe();
+    // reset start target after handling
+    touchStartTarget = null;
   },
   false,
 );
@@ -771,6 +805,24 @@ document.addEventListener(
 function handleSwipe() {
   const swipeThreshold = 50;
   const diff = touchStartX - touchEndX;
+
+  // Ignore swipes that started from inputs or player controls
+  try {
+    if (
+      touchStartTarget &&
+      (touchStartTarget.tagName === "INPUT" ||
+        touchStartTarget.tagName === "TEXTAREA" ||
+        (touchStartTarget.closest &&
+          (touchStartTarget.closest(".music-player") ||
+            touchStartTarget.closest(".playlist") ||
+            touchStartTarget.closest(".progress-bar") ||
+            touchStartTarget.closest(".volume-control"))))
+    ) {
+      return;
+    }
+  } catch (err) {
+    // ignore errors from DOM queries, proceed with swipe handling
+  }
 
   if (Math.abs(diff) > swipeThreshold) {
     const navBtns = Array.from(document.querySelectorAll(".nav-btn"));
@@ -786,6 +838,6 @@ function handleSwipe() {
       nextIndex = (currentIndex - 1 + navBtns.length) % navBtns.length;
     }
 
-    navBtns[nextIndex].click();
+    if (navBtns[nextIndex]) navBtns[nextIndex].click();
   }
 }
